@@ -1,0 +1,11 @@
+To Do:
+-Add function to drop the total count of either humans or zombies by 1 whenever the respective
+ population's total health decreases by the health of a single object.
+
+-Give all single character vars in functions to easier to read user friendly, 
+ easy to keep track of, names.
+-------------------------------
+Completed:
+    -Was able to get a functional prototype created.
+    -Added user input.
+    -Added zombie and human health variables.
