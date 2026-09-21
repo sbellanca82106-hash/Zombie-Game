@@ -287,6 +287,7 @@ def simulate_conflict(
 
 
 # Takes power from both sides and simulates battles based on the variable
+# Edit these variables below
 conflict = simulate_conflict(
     human_power=50,
     zombie_power=60,
