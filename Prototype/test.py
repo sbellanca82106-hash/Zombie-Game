@@ -1,49 +1,5 @@
 import math
 import random
-# ============================================================
-#Mack contribution
-class Entity:
-    #Base class shared by Human and Zombie
-    def __init__(self, name, health, speed, power):
-        self.name = name #stores entity names
-        self.health = health #stores entity health
-        self.speed = speed #stores entity speed
-        self.power = power #stores entity power
-
-    def is_alive(self):
-        return self.health > 0 #check if entity is alive or not
-
-    def take_damage(self, amount):
-        self.health = max(0, self.health - amount) #calculates damage taken, floored at 0 to prevent negative health
-
-
-class Human(Entity): #human class details
-    def __init__(self, name):
-        super().__init__(name, health=10, speed=random.randint(3, 7), power=random.randint(3, 5))
-        #stats for human class entity's, with randomized speed and power for simulation variance
-
-
-class Zombie(Entity): #zombie class details
-    def __init__(self, name):
-        super().__init__(name, health=20, speed=random.randint(1, 4), power=5)
-        #stats for zombie class entity's, with randomized speed for simulation variance
-
-#AI was used for following definition, with explanation provided by AI after
-def create_population(cls, count, prefix):
-    # A helper function for generating a whole list of entities at once,
-    # instead of writing them out one by one.
-    # cls: the class to build instances of (Human or Zombie — classes can be passed like values).
-    # count: how many instances to create.
-    # prefix: text to put before each instance's number, e.g. "Human" or "Zombie".
-    return [cls(f"{prefix}{i+1}") for i in range(count)] 
-    # A list comprehension — shorthand for a loop that builds a list.
-    # range(count): produces 0, 1, 2, ... up to count-1.
-    # for i in range(count): loops through each of those numbers.
-    # f"{prefix}{i+1}": builds a name string like "Human1", "Human2", using i+1
-    #   so numbering starts at 1 instead of 0.
-    # cls(...): calls the class's constructor (Human(...) or Zombie(...)) with that name.
-    # The [...] around the whole expression collects every result into one list.
-# ============================================================
 
 
 # Calculates the advantage (mean) of either humans or zombies based on their respective power levels.
@@ -63,6 +19,7 @@ def calculate_uncertainty(advantage):
     base_uncertainty = 1.5
     minimum_uncertainty = 0.3
 
+    # Uncertainty decreases as advantage increases
     uncertainty = base_uncertainty / (
         1 + 0.6 * abs(advantage)
     )
@@ -73,25 +30,31 @@ def calculate_uncertainty(advantage):
 # Simulates a single battle round between humans and zombies.
 def simulate_battle(human_power, zombie_power):
 
+    # Calculates advantage using both sides' power levels
     advantage = calculate_advantage(
         human_power,
         zombie_power
     )
 
+    # Calculates uncertainty based on the advantage
     uncertainty = calculate_uncertainty(advantage)
 
+    # Results are generated using a bell curve distribution. The advantage is the mean, and the uncertainty is the standard deviation.
     result = random.gauss(
         advantage,
         uncertainty
     )
 
+    # An advantage of 10 to 1 or greater guarantees victory for the stronger side.
     major_advantage_threshold = math.log(10)
 
+    # Prevents random uncertainty from allowing the overwhelmingly weaker side to win.
     if advantage >= major_advantage_threshold:
         result = max(result, advantage)
     elif advantage <= -major_advantage_threshold:
         result = min(result, advantage)
 
+    # Determine the winner based on the result
     if result > 0:
         winner = "humans"
     elif result < 0:
@@ -107,6 +70,8 @@ def simulate_battle(human_power, zombie_power):
     }
 
 
+# Since we are simulating a series of battles, there will be losses
+# Depending on the result of the battle, each side will lose a percentage of their power.
 def calculate_power_losses(
     human_power,
     zombie_power,
@@ -115,25 +80,49 @@ def calculate_power_losses(
     margin_effect=0.08,
     wipeout_ratio=10.0
 ):
+    """
+    Calculates how much power each side loses after a battle.
+
+    Both sides suffer the base loss rate.
+
+    The magnitude of the result determines the margin of victory:
+    - The winner loses less power.
+    - The loser loses more power.
+    - A close result gives both sides similar losses.
+    - A decisive result creates a larger difference in losses.
+    """
+
+    # Converts any result into a bounded value from 0 to almost 1.
+    # This prevents unusually large Gaussian results from causing
+    # unreasonable loss percentages.
     victory_margin = math.tanh(abs(result))
+
     loss_rate_difference = margin_effect * victory_margin
 
     if result > 0:
+        # Humans won.
         human_loss_rate = base_loss_rate - loss_rate_difference
         zombie_loss_rate = base_loss_rate + loss_rate_difference
+
     elif result < 0:
+        # Zombies won.
         human_loss_rate = base_loss_rate + loss_rate_difference
         zombie_loss_rate = base_loss_rate - loss_rate_difference
+
     else:
+        # Exact draw.
         human_loss_rate = base_loss_rate
         zombie_loss_rate = base_loss_rate
 
+    # Wipe out zombies when victorious humans have a major power advantage.
     if (
         result > 0
         and zombie_power > 0
         and human_power / zombie_power >= wipeout_ratio
     ):
         zombie_loss_rate = 1.0
+
+    # Wipe out humans when victorious zombies have a major power advantage.
     elif (
         result < 0
         and human_power > 0
@@ -141,25 +130,31 @@ def calculate_power_losses(
     ):
         human_loss_rate = 1.0
 
+    # Ensure loss rates cannot become negative or exceed 100%.
     human_loss_rate = max(0.0, min(1.0, human_loss_rate))
     zombie_loss_rate = max(0.0, min(1.0, zombie_loss_rate))
 
     human_power_lost = human_power * human_loss_rate
     zombie_power_lost = zombie_power * zombie_loss_rate
 
+    # Convert calculated losses to whole forces before updating either side.
     human_power_lost = min(human_power, round(human_power_lost))
     zombie_power_lost = min(zombie_power, round(zombie_power_lost))
 
+    # The losing side always loses at least one force, preventing low-force stalemates.
     if result > 0 and zombie_power > 0:
         zombie_power_lost = max(1, zombie_power_lost)
     elif result < 0 and human_power > 0:
         human_power_lost = max(1, human_power_lost)
+
+    # Both sides lose at least one force in the event of an exact draw.
     else:
         if human_power > 0:
             human_power_lost = max(1, human_power_lost)
         if zombie_power > 0:
             zombie_power_lost = max(1, zombie_power_lost)
 
+    # Recalculate loss rates so battle history matches the whole forces actually lost.
     human_loss_rate = (
         human_power_lost / human_power
         if human_power > 0
@@ -180,27 +175,9 @@ def calculate_power_losses(
     }
 
 
-# ============================================================
-#Mack contribution
-def losses_to_population(population, power_lost):
-    remaining_loss = power_lost
-    random.shuffle(population)
-
-    for entity in population:
-        if remaining_loss <= 0:
-            break
-        damage = min(entity.health, remaining_loss)
-        entity.take_damage(damage)
-        remaining_loss -= damage
-
-    # Remove anyone who died from this round of losses.
-    return [e for e in population if e.is_alive()]
-# ============================================================
-
-
-def simulate_conflict(#edited to to fit new class definitions
-    humans,
-    zombies,
+def simulate_conflict(
+    human_power,
+    zombie_power,
     number_of_battles,
     base_loss_rate=0.12,
     margin_effect=0.08,
@@ -208,57 +185,63 @@ def simulate_conflict(#edited to to fit new class definitions
     wipeout_ratio=10.0
 ):
     """
-    Simulates a sequence of battles between two populations
-    of Human/Zombie objects (instead of raw power numbers).
-    """
+    Simulates a sequence of battles.
 
-    # Mack edit: power is now derived from the actual population's
-    # combined health, instead of being passed in directly.
-    if len(humans) == 0 or len(zombies) == 0:
-        raise ValueError("Both populations must start with at least one member.")
+    Power is reduced after every battle. Updated power values are
+    then used to calculate the advantage in the next battle.
+    """
+    if human_power < 0 or zombie_power < 0:
+        raise ValueError("Power cannot be negative.")
 
     if number_of_battles < 1:
         raise ValueError("There must be at least one battle.")
 
+    # Validate the ratio used to determine a major advantage.
     if wipeout_ratio <= 1:
         raise ValueError("The wipeout ratio must be greater than 1.")
+
+    current_human_power = int(human_power)
+    current_zombie_power = int(zombie_power)
 
     battle_history = []
 
     for battle_number in range(1, number_of_battles + 1):
-        if not humans or not zombies:
-            #Mack change: New check added here at the top of the loop.
-            # Needed because current_human_power/current_zombie_power get calculated further down now,
-            # not before the loop like in the original version.
-            break
-
-        #Mack edit: recalculate power each round from surviving individuals
-        current_human_power = sum(health for h in humans)
-        current_zombie_power = sum(z.health for z in zombies)
-
+        # Stop early if one or both sides have been eliminated.
         if (
             current_human_power <= elimination_threshold
             or current_zombie_power <= elimination_threshold
         ):
             break
 
+        starting_human_power = current_human_power
+        starting_zombie_power = current_zombie_power
+
         battle = simulate_battle(
-            human_power=current_human_power,
-            zombie_power=current_zombie_power
+            human_power=starting_human_power,
+            zombie_power=starting_zombie_power
         )
 
         losses = calculate_power_losses(
-            human_power=current_human_power,
-            zombie_power=current_zombie_power,
+            human_power=starting_human_power,
+            zombie_power=starting_zombie_power,
             result=battle["result"],
             base_loss_rate=base_loss_rate,
             margin_effect=margin_effect,
+            # Pass the configurable wipeout ratio to the loss calculation.
             wipeout_ratio=wipeout_ratio
         )
 
-        #Mack change: spend the calculated losses on actual individuals ===
-        humans = losses_to_population(humans, losses["human_power_lost"])
-        zombies = losses_to_population(zombies, losses["zombie_power_lost"])
+        # Subtract the whole-force losses directly without rounding the remaining power for humans
+        current_human_power = max(
+            0,
+            current_human_power - losses["human_power_lost"]
+        )
+
+        # Subtract the whole-force losses directly without rounding the remaining power for zombies
+        current_zombie_power = max(
+            0,
+            current_zombie_power - losses["zombie_power_lost"]
+        )
 
         battle_history.append({
             "battle_number": battle_number,
@@ -267,17 +250,27 @@ def simulate_conflict(#edited to to fit new class definitions
             "advantage": battle["advantage"],
             "uncertainty": battle["uncertainty"],
             "victory_margin": losses["victory_margin"],
-            "starting_human_power": current_human_power,
-            "starting_zombie_power": current_zombie_power,
+            "starting_human_power": starting_human_power,
+            "starting_zombie_power": starting_zombie_power,
+            "human_loss_rate": losses["human_loss_rate"],
+            "zombie_loss_rate": losses["zombie_loss_rate"],
             "human_power_lost": losses["human_power_lost"],
             "zombie_power_lost": losses["zombie_power_lost"],
-            "humans_remaining": len(humans),
-            "zombies_remaining": len(zombies)
+            "remaining_human_power": current_human_power,
+            "remaining_zombie_power": current_zombie_power
         })
-#Mack change: compares list lengths instead of floats
-    if len(humans) > len(zombies):
+
+    # Treat power below the threshold as eliminated.
+    if current_human_power <= elimination_threshold:
+        current_human_power = 0.0
+
+    if current_zombie_power <= elimination_threshold:
+        current_zombie_power = 0.0
+
+    # Determine the final winner from remaining power.
+    if current_human_power > current_zombie_power:
         final_winner = "humans"
-    elif len(zombies) > len(humans):
+    elif current_zombie_power > current_human_power:
         final_winner = "zombies"
     else:
         final_winner = "draw"
@@ -285,24 +278,23 @@ def simulate_conflict(#edited to to fit new class definitions
     return {
         "winner": final_winner,
         "battles_fought": len(battle_history),
-        "humans_remaining": len(humans),
-        "zombies_remaining": len(zombies),
+        "starting_human_power": human_power,
+        "starting_zombie_power": zombie_power,
+        "remaining_human_power": current_human_power,
+        "remaining_zombie_power": current_zombie_power,
         "battle_history": battle_history
     }
 
 
-
-#Mack edit: build the populations of individual objects
-
-humans = create_population(Human, 50, "Human")
-zombies = create_population(Zombie, 60, "Zombie")
-
+# Takes power from both sides and simulates battles based on the variable
+# Edit these variables below
 conflict = simulate_conflict(
-    humans=humans,
-    zombies=zombies,
+    human_power=50,
+    zombie_power=60,
     number_of_battles=100
 )
 
+# Prints the results of each battle in the conflict simulation.
 for battle in conflict["battle_history"]:
     print(
         f"Battle {battle['battle_number']}: "
@@ -310,10 +302,71 @@ for battle in conflict["battle_history"]:
         f"Result: {battle['result']:.3f} | "
         f"Humans lost: {battle['human_power_lost']:.2f} | "
         f"Zombies lost: {battle['zombie_power_lost']:.2f} | "
-        f"Remaining: H {battle['humans_remaining']}, Z {battle['zombies_remaining']}"
+        f"Remaining: H {battle['remaining_human_power']:.2f}, "
+        f"Z {battle['remaining_zombie_power']:.2f}"
     )
 
+# Prints final results of the conflict simulation.
 print(f"Final winner: {conflict['winner']}")
 print(f"Battles fought: {conflict['battles_fought']}")
-print(f"Humans remaining: {conflict['humans_remaining']}")
-print(f"Zombies remaining: {conflict['zombies_remaining']}")
+print(f"Human power remaining: {conflict['remaining_human_power']:.2f}")
+print(f"Zombie power remaining: {conflict['remaining_zombie_power']:.2f}")
+
+
+# Additions (Aiden)
+# This function runs an interactive game where humans and zombies battle until one side is eliminated or the battle limit is reached.
+def run_game():
+    human_power = 50
+    zombie_power = 60
+    max_battles = 100
+    battle_number = 0
+
+    while battle_number < max_battles:
+        # Stop if one or both sides have been eliminated.
+        if human_power <= 0 and zombie_power <= 0:
+            print("Both sides were eliminated. It's a draw!")
+            break
+        elif human_power <= 0:
+            print("Zombies win!")
+            break
+        elif zombie_power <= 0:
+            print("Humans win!")
+            break
+
+        print(f"\nHumans: {human_power} | Zombies: {zombie_power}")
+        choice = input("Press Enter to battle, or type q to quit: ")
+        choice = choice.strip().lower()
+
+        if choice == "q":
+            print("Game ended.")
+            break
+        elif choice != "":
+            print("Invalid choice. Try again.")
+            continue
+
+        # Use functions to run one battle.
+        battle = simulate_battle(human_power, zombie_power)
+        losses = calculate_power_losses(
+            human_power, zombie_power, battle["result"]
+        )
+
+        human_power -= losses["human_power_lost"]
+        zombie_power -= losses["zombie_power_lost"]
+        battle_number += 1
+
+        print(f"Battle {battle_number}: {battle['winner']} won!")
+
+    # This runs only if the battle limit is reached without a break.
+    else:
+        print("Battle limit reached.")
+        if human_power > zombie_power:
+            print("Humans win!")
+        elif zombie_power > human_power:
+            print("Zombies win!")
+        else:
+            print("It's a draw!")
+
+    print(f"Final forces — Humans: {human_power}, Zombies: {zombie_power}")
+
+
+run_game()
