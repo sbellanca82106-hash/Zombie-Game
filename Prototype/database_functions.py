@@ -35,13 +35,13 @@ with psycopg.connect(
 
                                 INSERT INTO humans (
                                         agent_id,
-                                        is_fighter,
+                                        weapon_tier,
                                         x_pos,
                                         y_pos
                                 )
                                 SELECT
                                         agent_id,
-                                        true,
+                                        1,
                                         0,
                                         0
                                 FROM new_agent;
@@ -74,13 +74,13 @@ with psycopg.connect(
                         		)
 
                                 INSERT INTO zombies (
-                                                                                agent_id,
+                                        agent_id,
                                         strength,
                                         x_pos,
                                         y_pos
                                 )
                                 SELECT
-                                                                                agent_id,
+                                        agent_id,
                                         3,
                                         0,
                                         0
@@ -136,7 +136,7 @@ with psycopg.connect(
 								agent_id integer PRIMARY KEY,
 								agent_type agent_type NOT NULL DEFAULT 'human',
 
-								is_fighter boolean NOT NULL DEFAULT false,
+								weapon_tier boolean NOT NULL DEFAULT 1,
 
 								x_pos integer NOT NULL DEFAULT 0,
 								y_pos integer NOT NULL DEFAULT 0,
