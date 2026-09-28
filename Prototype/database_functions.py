@@ -136,7 +136,7 @@ with psycopg.connect(
 								agent_id integer PRIMARY KEY,
 								agent_type agent_type NOT NULL DEFAULT 'human',
 
-								weapon_tier boolean NOT NULL DEFAULT 1,
+								weapon_tier integer NOT NULL DEFAULT 1,
 
 								x_pos integer NOT NULL DEFAULT 0,
 								y_pos integer NOT NULL DEFAULT 0,
