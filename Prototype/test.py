@@ -293,7 +293,7 @@ conflict = simulate_conflict(
     zombie_power=60,
     number_of_battles=100
 )
-
+"""
 # Prints the results of each battle in the conflict simulation.
 for battle in conflict["battle_history"]:
     print(
@@ -311,7 +311,7 @@ print(f"Final winner: {conflict['winner']}")
 print(f"Battles fought: {conflict['battles_fought']}")
 print(f"Human power remaining: {conflict['remaining_human_power']:.2f}")
 print(f"Zombie power remaining: {conflict['remaining_zombie_power']:.2f}")
-
+"""
 
 # Additions (Aiden)
 # This function runs an interactive game where humans and zombies battle until one side is eliminated or the battle limit is reached.
