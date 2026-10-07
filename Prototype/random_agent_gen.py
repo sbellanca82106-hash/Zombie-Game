@@ -16,7 +16,7 @@ def main():
                 y_pos=randint(0, 100)
             )
 
-        sql_functions.count_humans(conn=conn)
+        sql_functions.count_humans(conn)
 
 
 if __name__ == "__main__":
