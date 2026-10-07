@@ -1,5 +1,7 @@
 # Psycopg import occurs in other files, so it is not imported here. This file is only for SQL functions.
 # These functions are imported into other files.
+from database import database_connect
+
 
 def create_human(
     health,
@@ -184,8 +186,75 @@ def create_tables(conn):
 """)
 
 
+def delete_tables(conn):
+    with conn.cursor() as cur:
+        cur.execute("""
+            DROP TABLE IF EXISTS zombies CASCADE;
+            DROP TABLE IF EXISTS humans CASCADE;
+            DROP TABLE IF EXISTS agents CASCADE;
+
+            DROP TYPE IF EXISTS agent_type CASCADE;
+""")
+
+
+def reset_tables(conn):
+    delete_tables(conn)
+    create_tables(conn)
+
+
+def prompt(conn):
+    print('Running this file directly will show you this prompt. Below are functions that you can run directly.')
+    print(
+        'Functions:\n'
+        '1. Create tables: create_tables(conn)\n'
+        '2. Delete tables: delete_tables(conn)\n'
+        '3. Reset tables: reset_tables(conn)\n'
+        '4. Create human: create_human(health, speed, weapon_tier, x_pos, y_pos, conn)\n'
+        '5. Create zombie: create_zombie(health, speed, strength, x_pos, y_pos, conn)\n'
+        '6. Count humans: count_humans(conn)\n'
+        '7. Count zombies: count_zombies(conn)\n'
+    )
+    try:
+        choice = int(
+            input('Enter the number of the function you want to run: '))
+        if choice == 1:
+            with database_connect() as conn:
+                create_tables(conn)
+        elif choice == 2:
+            with database_connect() as conn:
+                delete_tables(conn)
+        elif choice == 3:
+            with database_connect() as conn:
+                reset_tables(conn)
+        elif choice == 4:
+            health = int(input('Enter health: '))
+            speed = int(input('Enter speed: '))
+            weapon_tier = int(input('Enter weapon tier: '))
+            x_pos = int(input('Enter x position: '))
+            y_pos = int(input('Enter y position: '))
+            with database_connect() as conn:
+                create_human(health, speed, weapon_tier, x_pos, y_pos, conn)
+        elif choice == 5:
+            health = int(input('Enter health: '))
+            speed = int(input('Enter speed: '))
+            strength = int(input('Enter strength: '))
+            x_pos = int(input('Enter x position: '))
+            y_pos = int(input('Enter y position: '))
+            with database_connect() as conn:
+                create_zombie(health, speed, strength, x_pos, y_pos, conn)
+        elif choice == 6:
+            with database_connect() as conn:
+                count_humans(conn)
+        elif choice == 7:
+            with database_connect() as conn:
+                count_zombies(conn)
+    except ValueError:
+        print('Invalid input. Please enter a number corresponding to the function you want to run.')
+
+
 # MUST indent when putting functions
 # Run functions at will here
 # Must have conn as an argument in order to run the functions
 if __name__ == "__main__":
-    print('Main')
+    conn = database_connect()
+    prompt(conn)
