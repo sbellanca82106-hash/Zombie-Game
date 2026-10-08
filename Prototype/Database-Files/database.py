@@ -1,3 +1,5 @@
+# Needed to run any database related function
+
 import psycopg
 
 
