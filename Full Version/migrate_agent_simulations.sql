@@ -19,3 +19,14 @@ ALTER TABLE agents
 
 CREATE INDEX IF NOT EXISTS idx_agents_simulation_id
     ON agents(simulation_id);
+
+
+-- Ensure both agent subtype tables persist grid coordinates.
+ALTER TABLE humans
+    ADD COLUMN IF NOT EXISTS x_pos INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE humans
+    ADD COLUMN IF NOT EXISTS y_pos INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE zombies
+    ADD COLUMN IF NOT EXISTS x_pos INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE zombies
+    ADD COLUMN IF NOT EXISTS y_pos INTEGER NOT NULL DEFAULT 0;

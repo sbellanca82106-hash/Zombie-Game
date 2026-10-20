@@ -106,6 +106,68 @@ def create_zombie(
         return cur.fetchone()[0]
 
 
+
+def update_agent_positions(conn, humans, zombies):
+    """Persist the latest grid coordinates for all agents in this run."""
+    human_rows = [
+        (human.x_pos, human.y_pos, human.agent_id)
+        for human in humans
+        if human.agent_id is not None
+    ]
+    zombie_rows = [
+        (zombie.x_pos, zombie.y_pos, zombie.agent_id)
+        for zombie in zombies
+        if zombie.agent_id is not None
+    ]
+
+    with conn.cursor() as cur:
+        if human_rows:
+            cur.executemany(
+                "UPDATE humans SET x_pos = %s, y_pos = %s WHERE agent_id = %s;",
+                human_rows,
+            )
+        if zombie_rows:
+            cur.executemany(
+                "UPDATE zombies SET x_pos = %s, y_pos = %s WHERE agent_id = %s;",
+                zombie_rows,
+            )
+
+
+def mark_agents_dead(conn, agents):
+    """Persist defeated agents as dead while retaining their last coordinates."""
+    rows = [
+        (agent.agent_id,)
+        for agent in agents
+        if agent.agent_id is not None
+    ]
+    if not rows:
+        return
+
+    with conn.cursor() as cur:
+        cur.executemany(
+            "UPDATE agents SET is_alive = FALSE, health = 0 WHERE agent_id = %s;",
+            rows,
+        )
+
+
+def delete_simulation(conn, simulation_id):
+    """Delete one failed/incomplete run; agent subtype rows cascade with agents."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM simulations WHERE simulation_id = %s;",
+            (simulation_id,),
+        )
+
+
+def finish_simulation(conn, simulation_id):
+    """Record that the simulation run has ended."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE simulations SET finished_at = NOW() WHERE simulation_id = %s;",
+            (simulation_id,),
+        )
+
+
 def count_humans(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM humans;")

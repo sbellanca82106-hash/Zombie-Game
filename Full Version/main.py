@@ -5,7 +5,7 @@ import time
 import multiprocessing as Process
 import os
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import database_functions as db_functions
 from connection import database_connect
@@ -71,6 +71,296 @@ def create_units_multithreaded(
         units.extend(created_chunk)
 
     return units
+
+# Shared grid and perception settings. Coordinates are integer grid cells.
+GRID_WIDTH = 100
+GRID_HEIGHT = 100
+DETECTION_RADIUS = 10.0  # Euclidean distance measured in grid cells.
+MOVEMENT_RNG = random.Random()  # Keep movement randomness separate from battle outcomes.
+MOVEMENT_RNG_LOCK = threading.Lock()
+
+
+def assign_initial_grid_positions(humans, zombies):
+    """Give every agent a grid coordinate; avoid overlaps when practical."""
+    agents = list(humans) + list(zombies)
+    if not agents:
+        return
+
+    total_cells = GRID_WIDTH * GRID_HEIGHT
+    cell_ids = list(range(total_cells))
+    MOVEMENT_RNG.shuffle(cell_ids)
+
+    # Each agent starts in a different cell unless the population exceeds the grid.
+    if len(agents) <= total_cells:
+        chosen_cells = cell_ids[:len(agents)]
+    else:
+        chosen_cells = cell_ids + [
+            MOVEMENT_RNG.randrange(total_cells)
+            for _ in range(len(agents) - total_cells)
+        ]
+
+    for agent, cell_id in zip(agents, chosen_cells):
+        agent.x_pos = cell_id % GRID_WIDTH
+        agent.y_pos = cell_id // GRID_WIDTH
+
+
+def _grid_distance(position_a, position_b):
+    """Return Euclidean distance between two grid cells."""
+    return math.hypot(
+        position_a[0] - position_b[0],
+        position_a[1] - position_b[1],
+    )
+
+
+def _roam_to_neighbor(x_pos, y_pos):
+    """Move to a random adjacent cell while staying inside the grid."""
+    neighbors = [
+        (x_pos + dx, y_pos + dy)
+        for dx in (-1, 0, 1)
+        for dy in (-1, 0, 1)
+        if (dx != 0 or dy != 0)
+        and 0 <= x_pos + dx < GRID_WIDTH
+        and 0 <= y_pos + dy < GRID_HEIGHT
+    ]
+    # Every grid cell has at least one valid neighbor for this grid size.
+    # Protect the dedicated generator when roaming plans run concurrently.
+    with MOVEMENT_RNG_LOCK:
+        return MOVEMENT_RNG.choice(neighbors)
+
+
+def _next_agent_position(agent, opposing_agents, old_positions, detection_radius):
+    """Chase the closest opposing agent in range; otherwise roam randomly."""
+    current = old_positions[id(agent)]
+
+    if opposing_agents:
+        target = min(
+            opposing_agents,
+            key=lambda opponent: _grid_distance(
+                current, old_positions[id(opponent)]
+            ),
+        )
+        target_position = old_positions[id(target)]
+        distance = _grid_distance(current, target_position)
+
+        if distance <= detection_radius and target_position != current:
+            target_x, target_y = target_position
+            x_pos, y_pos = current
+            # One step per battle; diagonal movement is allowed.
+            next_x = x_pos + ((target_x > x_pos) - (target_x < x_pos))
+            next_y = y_pos + ((target_y > y_pos) - (target_y < y_pos))
+            return (
+                max(0, min(GRID_WIDTH - 1, next_x)),
+                max(0, min(GRID_HEIGHT - 1, next_y)),
+            )
+
+    # No opposing agent in range (or agents already share a cell): keep roaming.
+    return _roam_to_neighbor(*current)
+
+
+def _plan_one_agent_move(task):
+    """Worker function used to find one agent's nearest opposing neighbor."""
+    agent, opposing_agents, old_positions, detection_radius = task
+    return agent, _next_agent_position(
+        agent, opposing_agents, old_positions, detection_radius
+    )
+
+
+def move_agents_for_battle(
+    humans,
+    zombies,
+    detection_radius=DETECTION_RADIUS,
+    executor=None,
+    workers=None,
+):
+    """Move all agents concurrently using positions snapshotted at round start.
+
+    Each agent finds the nearest opposing agent in a worker task. Humans only
+    consider zombies, and zombies only consider humans. One step is taken toward
+    an opponent within detection_radius; otherwise the agent roams to a neighbor.
+    A caller-owned executor is reused across rounds to avoid repeatedly starting
+    and shutting down thread pools.
+    """
+    if not humans or not zombies:
+        return
+
+    all_agents = list(humans) + list(zombies)
+    old_positions = {
+        id(agent): (agent.x_pos, agent.y_pos)
+        for agent in all_agents
+    }
+    human_targets = tuple(zombies)
+    zombie_targets = tuple(humans)
+    tasks = [
+        (human, human_targets, old_positions, detection_radius)
+        for human in humans
+    ] + [
+        (zombie, zombie_targets, old_positions, detection_radius)
+        for zombie in zombies
+    ]
+
+    if executor is not None:
+        planned_moves = list(executor.map(_plan_one_agent_move, tasks))
+    else:
+        worker_count = min(workers or (os.cpu_count() or 4), len(tasks))
+        with ThreadPoolExecutor(max_workers=max(1, worker_count)) as move_executor:
+            planned_moves = list(move_executor.map(_plan_one_agent_move, tasks))
+
+    # Apply moves after every neighbor search completes, making movement simultaneous.
+    for agent, (new_x, new_y) in planned_moves:
+        agent.x_pos = new_x
+        agent.y_pos = new_y
+
+
+def _split_evenly(items, workers):
+    """Return a small number of non-empty, reasonably balanced work chunks."""
+    if not items:
+        return []
+    chunk_count = min(max(1, workers), len(items))
+    return [items[index::chunk_count] for index in range(chunk_count)]
+
+
+def _persist_agent_chunk(task):
+    """Insert one chunk in its own connection/transaction on a worker thread."""
+    simulation_id, agents = task
+    conn = database_connect()
+    created = []
+    try:
+        for agent in agents:
+            if isinstance(agent, Human):
+                agent_id = db_functions.create_human(
+                    agent.health,
+                    agent.speed,
+                    agent.weapon_tier,
+                    agent.x_pos,
+                    agent.y_pos,
+                    conn,
+                    simulation_id=simulation_id,
+                    power=agent.power,
+                )
+            else:
+                agent_id = db_functions.create_zombie(
+                    agent.health,
+                    agent.speed,
+                    agent.strength,
+                    agent.x_pos,
+                    agent.y_pos,
+                    conn,
+                    simulation_id=simulation_id,
+                    power=agent.power,
+                )
+            created.append((agent, agent_id))
+        conn.commit()
+        return created
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def persist_agents_multithreaded(
+    humans, zombies, simulation_id, executor, workers
+):
+    """Save all initial agent rows concurrently using independent DB connections.
+
+    A single Psycopg connection is never shared between worker threads. IDs are
+    copied onto the Python objects only once all worker chunks have succeeded.
+    """
+    chunks = _split_evenly(list(humans) + list(zombies), workers)
+    if not chunks:
+        return
+
+    futures = [
+        executor.submit(_persist_agent_chunk, (simulation_id, chunk))
+        for chunk in chunks
+    ]
+    created = []
+    errors = []
+    for future in as_completed(futures):
+        try:
+            created.extend(future.result())
+        except Exception as exc:
+            errors.append(exc)
+
+    if errors:
+        raise RuntimeError(
+            f"Agent database creation failed in {len(errors)} worker chunk(s): {errors[0]}"
+        ) from errors[0]
+
+    for agent, agent_id in created:
+        agent.agent_id = agent_id
+
+
+def _persist_position_chunk(agents):
+    """Update coordinates for one chunk of agents using a worker DB connection."""
+    conn = database_connect()
+    try:
+        chunk_humans = [agent for agent in agents if isinstance(agent, Human)]
+        chunk_zombies = [agent for agent in agents if isinstance(agent, Zombie)]
+        db_functions.update_agent_positions(conn, chunk_humans, chunk_zombies)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def update_agent_positions_multithreaded(
+    humans, zombies, executor, workers
+):
+    """Persist position changes in parallel batches, one connection per worker."""
+    agents = [
+        agent for agent in list(humans) + list(zombies)
+        if agent.agent_id is not None
+    ]
+    futures = [
+        executor.submit(_persist_position_chunk, chunk)
+        for chunk in _split_evenly(agents, workers)
+    ]
+    errors = []
+    for future in as_completed(futures):
+        try:
+            future.result()
+        except Exception as exc:
+            errors.append(exc)
+    if errors:
+        raise RuntimeError(
+            f"Position persistence failed in {len(errors)} worker chunk(s): {errors[0]}"
+        ) from errors[0]
+
+
+def _persist_dead_chunk(agents):
+    """Mark a chunk of defeated agents dead on its own DB connection."""
+    conn = database_connect()
+    try:
+        db_functions.mark_agents_dead(conn, agents)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def mark_agents_dead_multithreaded(agents, executor, workers):
+    """Persist casualty states concurrently in independent DB transactions."""
+    persisted_agents = [agent for agent in agents if agent.agent_id is not None]
+    futures = [
+        executor.submit(_persist_dead_chunk, chunk)
+        for chunk in _split_evenly(persisted_agents, workers)
+    ]
+    errors = []
+    for future in as_completed(futures):
+        try:
+            future.result()
+        except Exception as exc:
+            errors.append(exc)
+    if errors:
+        raise RuntimeError(
+            f"Casualty persistence failed in {len(errors)} worker chunk(s): {errors[0]}"
+        ) from errors[0]
+
 
 #Game Loop to keep the game running until the user decides to quit. The user can input the number of humans and zombies, and the game will simulate battles between them.
 game_on = 1
@@ -397,180 +687,216 @@ while game_on == 1:
     # Additions (Aiden)
     # This function runs an interactive game where humans and zombies battle until one side is eliminated or the battle limit is reached.
     def run_game(h_power, z_power):
-    # Create one object for every unit of starting power.
-        humans = [Human() for _ in range(h_power)]
-        zombies = [Zombie() for _ in range(z_power)]
-
         max_battles = 1000
-        battle_number = 0
-
-        # Determine the number of worker threads.
         workers = min(32, os.cpu_count() or 8)
+        db_conn = None
+        simulation_id = None
 
-        # Create a shared pool of worker threads.
-        with ThreadPoolExecutor(
-            max_workers=workers
-        ) as executor:
+        try:
+            # Keep using the existing worker pool for agent construction.
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                print(
+                    f"Creating units using up to "
+                    f"{workers} worker threads..."
+                )
 
-            print(
-                f"Creating units using up to "
-                f"{workers} worker threads..."
-            )
+                humans = create_units_multithreaded(
+                    Human, h_power, executor, workers
+                )
+                zombies = create_units_multithreaded(
+                    Zombie, z_power, executor, workers
+                )
 
-            # Create individual human and zombie objects.
-            humans = create_units_multithreaded(
-                Human,
-                h_power,
-                executor,
-                workers
-            )
+                # Place all starting agents on the grid before writing them.
+                assign_initial_grid_positions(humans, zombies)
 
-            zombies = create_units_multithreaded(
-                Zombie,
-                z_power,
-                executor,
-                workers
-            )
-
-            # Save the initial state of this run. A database failure must not
-            # prevent the existing simulation and battle output from running.
-            # The shared connection uses a short connection timeout.
-            try:
-                with database_connect() as conn:
+                # Create the simulation record first; worker connections require its ID.
+                # Agent row insertion itself is parallelized using separate connections.
+                database_writes_enabled = False
+                try:
+                    db_conn = database_connect()
                     simulation_id = db_functions.create_simulation(
-                        conn,
+                        db_conn,
                         starting_humans=h_power,
-                        starting_zombies=z_power
+                        starting_zombies=z_power,
+                    )
+                    db_conn.commit()
+
+                    persist_agents_multithreaded(
+                        humans, zombies, simulation_id, executor, workers
+                    )
+                    database_writes_enabled = True
+                except Exception as exc:
+                    # Worker transactions that succeeded may already have committed.
+                    # Delete the run to remove any partial agent population.
+                    if db_conn is not None and simulation_id is not None:
+                        try:
+                            db_functions.delete_simulation(db_conn, simulation_id)
+                            db_conn.commit()
+                        except Exception:
+                            try:
+                                db_conn.rollback()
+                            except Exception:
+                                pass
+                    if db_conn is not None:
+                        try:
+                            db_conn.close()
+                        except Exception:
+                            pass
+                    db_conn = None
+                    simulation_id = None
+                    for agent in humans + zombies:
+                        agent.agent_id = None
+                    print(
+                        f"Warning: could not save this simulation to PostgreSQL: {exc}",
+                        file=sys.stderr,
                     )
 
-                    for human in humans:
-                        human.agent_id = db_functions.create_human(
-                            human.health,
-                            human.speed,
-                            human.weapon_tier,
-                            human.x_pos,
-                            human.y_pos,
-                            conn,
-                            simulation_id=simulation_id,
-                            power=human.power
-                        )
-
-                    for zombie in zombies:
-                        zombie.agent_id = db_functions.create_zombie(
-                            zombie.health,
-                            zombie.speed,
-                            zombie.strength,
-                            zombie.x_pos,
-                            zombie.y_pos,
-                            conn,
-                            simulation_id=simulation_id,
-                            power=zombie.power
-                        )
-            except Exception as exc:
-                # Keep database warnings separate from the normal game output.
                 print(
-                    f"Warning: could not save this simulation to PostgreSQL: {exc}",
-                    file=sys.stderr
-                )
-
-            print(
-                f"Starting forces — Humans: {len(humans)}, "
-                f"Zombies: {len(zombies)}"
-            )
-
-            for battle_number in range(
-                1, max_battles + 1
-            ):
-                human_power = len(humans)
-                zombie_power = len(zombies)
-
-                # Check whether either side has been eliminated.
-                if human_power == 0 and zombie_power == 0:
-                    print("Both sides were eliminated. It's a draw!")
-                    break
-                elif human_power == 0:
-                    print("Zombies win!")
-                    break
-                elif zombie_power == 0:
-                    print("Humans win!")
-                    break
-
-                # Submit the battle calculation to a worker thread.
-                future = executor.submit(
-                    _resolve_one_battle,
-                    human_power,
-                    zombie_power
-                )
-
-                # Wait for this round's results before continuing.
-                battle, losses = future.result()
-
-                # Determine how many objects must be removed.
-                human_casualties = min(
-                    int(losses["human_power_lost"]),
-                    len(humans)
-                )
-
-                zombie_casualties = min(
-                    int(losses["zombie_power_lost"]),
-                    len(zombies)
-                )
-
-                # Randomly select which humans were defeated.
-                if human_casualties:
-                    dead_indices = set(
-                        random.sample(
-                            range(len(humans)),
-                            human_casualties
-                        )
-                    )
-
-                    humans = [
-                        unit
-                        for index, unit in enumerate(humans)
-                        if index not in dead_indices
-                    ]
-
-                # Randomly select which zombies were defeated.
-                if zombie_casualties:
-                    dead_indices = set(
-                        random.sample(
-                            range(len(zombies)),
-                            zombie_casualties
-                        )
-                    )
-
-                    zombies = [
-                        unit
-                        for index, unit in enumerate(zombies)
-                        if index not in dead_indices
-                    ]
-
-                # Display the results of this round.
-                print(
-                    f"Battle {battle_number}: "
-                    f"{battle['winner']} won! "
-                    f"Humans lost: {human_casualties}, "
-                    f"Zombies lost: {zombie_casualties}, "
-                    f"Remaining — Humans: {len(humans)}, "
+                    f"Starting forces — Humans: {len(humans)}, "
                     f"Zombies: {len(zombies)}"
                 )
 
-            else:
-                # Runs only if the maximum number of battles is reached.
-                print("Battle limit reached.")
+                for battle_number in range(1, max_battles + 1):
+                    human_power = len(humans)
+                    zombie_power = len(zombies)
 
-                if len(humans) > len(zombies):
-                    print("Humans win!")
-                elif len(zombies) > len(humans):
-                    print("Zombies win!")
+                    # Keep the original end-of-battle conditions and messages.
+                    if human_power == 0 and zombie_power == 0:
+                        print("Both sides were eliminated. It's a draw!")
+                        break
+                    elif human_power == 0:
+                        print("Zombies win!")
+                        break
+                    elif zombie_power == 0:
+                        print("Humans win!")
+                        break
+
+                    # Every surviving agent moves once before this battle.
+                    move_agents_for_battle(
+                        humans, zombies, executor=executor, workers=workers
+                    )
+
+                    # Position updates are also performed concurrently in bounded
+                    # batches, each using its own DB connection and transaction.
+                    if db_conn is not None and database_writes_enabled:
+                        try:
+                            update_agent_positions_multithreaded(
+                                humans, zombies, executor, workers
+                            )
+                        except Exception as exc:
+                            database_writes_enabled = False
+                            print(
+                                f"Warning: could not update agent positions in PostgreSQL: {exc}",
+                                file=sys.stderr,
+                            )
+
+                    # Submit the existing battle calculation to a worker thread.
+                    future = executor.submit(
+                        _resolve_one_battle,
+                        human_power,
+                        zombie_power,
+                    )
+                    battle, losses = future.result()
+
+                    human_casualties = min(
+                        int(losses["human_power_lost"]), len(humans)
+                    )
+                    zombie_casualties = min(
+                        int(losses["zombie_power_lost"]), len(zombies)
+                    )
+
+                    dead_humans = []
+                    dead_zombies = []
+
+                    # Randomly select and track which humans were defeated.
+                    if human_casualties:
+                        dead_indices = set(
+                            random.sample(range(len(humans)), human_casualties)
+                        )
+                        dead_humans = [
+                            unit for index, unit in enumerate(humans)
+                            if index in dead_indices
+                        ]
+                        humans = [
+                            unit for index, unit in enumerate(humans)
+                            if index not in dead_indices
+                        ]
+
+                    # Randomly select and track which zombies were defeated.
+                    if zombie_casualties:
+                        dead_indices = set(
+                            random.sample(range(len(zombies)), zombie_casualties)
+                        )
+                        dead_zombies = [
+                            unit for index, unit in enumerate(zombies)
+                            if index in dead_indices
+                        ]
+                        zombies = [
+                            unit for index, unit in enumerate(zombies)
+                            if index not in dead_indices
+                        ]
+
+                    # Persist defeated agents concurrently, without sharing a connection.
+                    if db_conn is not None and database_writes_enabled:
+                        try:
+                            mark_agents_dead_multithreaded(
+                                dead_humans + dead_zombies, executor, workers
+                            )
+                        except Exception as exc:
+                            database_writes_enabled = False
+                            print(
+                                f"Warning: could not update agent casualties in PostgreSQL: {exc}",
+                                file=sys.stderr,
+                            )
+
+                    # Preserve the original battle output format.
+                    print(
+                        f"Battle {battle_number}: "
+                        f"{battle['winner']} won! "
+                        f"Humans lost: {human_casualties}, "
+                        f"Zombies lost: {zombie_casualties}, "
+                        f"Remaining — Humans: {len(humans)}, "
+                        f"Zombies: {len(zombies)}"
+                    )
+
                 else:
-                    print("It's a draw!")
+                    # Runs only if the maximum number of battles is reached.
+                    print("Battle limit reached.")
 
-            print(
-                f"Final forces — Humans: {len(humans)}, "
-                f"Zombies: {len(zombies)}"
-            )
+                    if len(humans) > len(zombies):
+                        print("Humans win!")
+                    elif len(zombies) > len(humans):
+                        print("Zombies win!")
+                    else:
+                        print("It's a draw!")
+
+                print(
+                    f"Final forces — Humans: {len(humans)}, "
+                    f"Zombies: {len(zombies)}"
+                )
+        finally:
+            # Mark the run as finished and always release the DB connection.
+            if db_conn is not None:
+                try:
+                    if simulation_id is not None:
+                        db_functions.finish_simulation(db_conn, simulation_id)
+                        db_conn.commit()
+                except Exception as exc:
+                    try:
+                        db_conn.rollback()
+                    except Exception:
+                        pass
+                    print(
+                        f"Warning: could not finalize simulation in PostgreSQL: {exc}",
+                        file=sys.stderr,
+                    )
+                finally:
+                    try:
+                        db_conn.close()
+                    except Exception:
+                        pass
+
     # Finish this simulation before asking whether to start another one.
     run_game(human_power, zombie_power)
 

@@ -2,7 +2,7 @@
 
 from random import randint
 
-from connection import database_connect
+from database import database_connect
 import database_functions as sql_functions
 
 
