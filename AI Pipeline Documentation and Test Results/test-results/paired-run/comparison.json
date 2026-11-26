@@ -1,0 +1,102 @@
+[
+  {
+    "version": "baseline",
+    "case": "survivor",
+    "expected": 0,
+    "actual": [
+      0
+    ],
+    "numeric": "PASS",
+    "frozen": "FAIL"
+  },
+  {
+    "version": "baseline",
+    "case": "death_without_turn",
+    "expected": 0,
+    "actual": [
+      0
+    ],
+    "numeric": "PASS",
+    "frozen": "FAIL"
+  },
+  {
+    "version": "baseline",
+    "case": "successful_turn",
+    "expected": 1,
+    "actual": [
+      1
+    ],
+    "numeric": "PASS",
+    "frozen": "FAIL"
+  },
+  {
+    "version": "baseline",
+    "case": "turned_then_died",
+    "expected": 1,
+    "actual": [
+      1
+    ],
+    "numeric": "PASS",
+    "frozen": "FAIL"
+  },
+  {
+    "version": "baseline",
+    "case": "turns_across_visits",
+    "expected": 2,
+    "actual": [
+      2
+    ],
+    "numeric": "PASS",
+    "frozen": "FAIL"
+  },
+  {
+    "version": "controlled",
+    "case": "survivor",
+    "expected": 0,
+    "actual": [
+      0
+    ],
+    "numeric": "PASS",
+    "frozen": "PASS"
+  },
+  {
+    "version": "controlled",
+    "case": "death_without_turn",
+    "expected": 0,
+    "actual": [
+      0
+    ],
+    "numeric": "PASS",
+    "frozen": "PASS"
+  },
+  {
+    "version": "controlled",
+    "case": "successful_turn",
+    "expected": 1,
+    "actual": [
+      1
+    ],
+    "numeric": "PASS",
+    "frozen": "PASS"
+  },
+  {
+    "version": "controlled",
+    "case": "turned_then_died",
+    "expected": 1,
+    "actual": [
+      1
+    ],
+    "numeric": "PASS",
+    "frozen": "PASS"
+  },
+  {
+    "version": "controlled",
+    "case": "turns_across_visits",
+    "expected": 2,
+    "actual": [
+      2
+    ],
+    "numeric": "PASS",
+    "frozen": "PASS"
+  }
+]

@@ -1,0 +1,306 @@
+{
+  "python": "3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]",
+  "seed": 4242,
+  "evaluator_sha256": "3e12c299a5689f83a211719f97333fb8879b5a8a896136283efae379dc6c0b6e",
+  "results": [
+    {
+      "case": "survivor",
+      "status": "FAIL",
+      "expected": 0,
+      "displayed": [],
+      "visits": [
+        [
+          [
+            17,
+            "human",
+            true,
+            5
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            990
+          ]
+        ]
+      ],
+      "expected_visits": [
+        [
+          [
+            17,
+            "human",
+            true,
+            5
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            990
+          ]
+        ]
+      ],
+      "report": "\n==================================================================\nSIMULATION REPORT\n==================================================================\nRound 1   sectors 1   ticks 1     attacks 2     humans 1->1  zombies 1->1\n   sector 1  x[   -25,    25] y[   -25,    25]  humans 1->1  zombies 1->1  iters 1    attacks 2     (tick budget)\n------------------------------------------------------------------\nHumans : 1 -> 1 alive   (0 net)\nZombies: 1 -> 1 alive   (0 net)\nRounds: 1   Total iterations: 1   attacks: 2   wall time: 0.09s\nParallel: serial backend, 1 worker(s), 1 sector(s)/round, 20 CPU(s), numpy nearest-enemy, seed 4242\nStopped: round limit\n=================================================================="
+    },
+    {
+      "case": "death_without_turn",
+      "status": "FAIL",
+      "expected": 0,
+      "displayed": [],
+      "visits": [
+        [
+          [
+            17,
+            "human",
+            false,
+            0
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            990
+          ]
+        ]
+      ],
+      "expected_visits": [
+        [
+          [
+            17,
+            "human",
+            false,
+            0
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            990
+          ]
+        ]
+      ],
+      "report": "\n==================================================================\nSIMULATION REPORT\n==================================================================\nRound 1   sectors 1   ticks 1     attacks 2     humans 1->0  zombies 1->1\n   sector 1  x[   -25,    25] y[   -25,    25]  humans 1->0  zombies 1->1  iters 1    attacks 2     (one side eliminated)\n------------------------------------------------------------------\nHumans : 1 -> 0 alive   (1 net)\nZombies: 1 -> 1 alive   (0 net)\nRounds: 1   Total iterations: 1   attacks: 2   wall time: 0.00s\nParallel: serial backend, 1 worker(s), 1 sector(s)/round, 20 CPU(s), numpy nearest-enemy, seed 4242\nStopped: round limit\n=================================================================="
+    },
+    {
+      "case": "successful_turn",
+      "status": "FAIL",
+      "expected": 1,
+      "displayed": [],
+      "visits": [
+        [
+          [
+            17,
+            "zombie",
+            true,
+            10
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            990
+          ]
+        ]
+      ],
+      "expected_visits": [
+        [
+          [
+            17,
+            "zombie",
+            true,
+            10
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            990
+          ]
+        ]
+      ],
+      "report": "\n==================================================================\nSIMULATION REPORT\n==================================================================\nRound 1   sectors 1   ticks 1     attacks 2     humans 1->0  zombies 1->2\n   sector 1  x[   -25,    25] y[   -25,    25]  humans 1->0  zombies 1->2  iters 1    attacks 2     (one side eliminated)\n------------------------------------------------------------------\nHumans : 1 -> 0 alive   (1 net)\nZombies: 1 -> 2 alive   (-1 net)\nRounds: 1   Total iterations: 1   attacks: 2   wall time: 0.00s\nParallel: serial backend, 1 worker(s), 1 sector(s)/round, 20 CPU(s), numpy nearest-enemy, seed 4242\nStopped: round limit\n=================================================================="
+    },
+    {
+      "case": "turned_then_died",
+      "status": "FAIL",
+      "expected": 1,
+      "displayed": [],
+      "visits": [
+        [
+          [
+            17,
+            "zombie",
+            true,
+            10
+          ],
+          [
+            23,
+            "human",
+            true,
+            100
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            980
+          ]
+        ],
+        [
+          [
+            17,
+            "zombie",
+            false,
+            0
+          ],
+          [
+            23,
+            "human",
+            true,
+            90
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            980
+          ]
+        ]
+      ],
+      "expected_visits": [
+        [
+          [
+            17,
+            "zombie",
+            true,
+            10
+          ],
+          [
+            23,
+            "human",
+            true,
+            100
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            980
+          ]
+        ],
+        [
+          [
+            17,
+            "zombie",
+            false,
+            0
+          ],
+          [
+            23,
+            "human",
+            true,
+            90
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            980
+          ]
+        ]
+      ],
+      "report": "\n==================================================================\nSIMULATION REPORT\n==================================================================\nRound 1   sectors 1   ticks 1     attacks 3     humans 2->1  zombies 1->2\nRound 2   sectors 1   ticks 1     attacks 3     humans 1->1  zombies 2->1\n------------------------------------------------------------------\nHumans : 2 -> 1 alive   (1 net)\nZombies: 1 -> 1 alive   (0 net)\nRounds: 2   Total iterations: 2   attacks: 6   wall time: 0.00s\nParallel: serial backend, 1 worker(s), 1 sector(s)/round, 20 CPU(s), numpy nearest-enemy, seed 4242\nStopped: round limit\n=================================================================="
+    },
+    {
+      "case": "turns_across_visits",
+      "status": "FAIL",
+      "expected": 2,
+      "displayed": [],
+      "visits": [
+        [
+          [
+            17,
+            "zombie",
+            true,
+            10
+          ],
+          [
+            23,
+            "human",
+            true,
+            5
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            980
+          ]
+        ],
+        [
+          [
+            17,
+            "zombie",
+            false,
+            0
+          ],
+          [
+            23,
+            "zombie",
+            true,
+            10
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            980
+          ]
+        ]
+      ],
+      "expected_visits": [
+        [
+          [
+            17,
+            "zombie",
+            true,
+            10
+          ],
+          [
+            23,
+            "human",
+            true,
+            5
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            980
+          ]
+        ],
+        [
+          [
+            17,
+            "zombie",
+            false,
+            0
+          ],
+          [
+            23,
+            "zombie",
+            true,
+            10
+          ],
+          [
+            90,
+            "zombie",
+            true,
+            980
+          ]
+        ]
+      ],
+      "report": "\n==================================================================\nSIMULATION REPORT\n==================================================================\nRound 1   sectors 1   ticks 1     attacks 3     humans 2->1  zombies 1->2\nRound 2   sectors 1   ticks 1     attacks 3     humans 1->0  zombies 2->2\n------------------------------------------------------------------\nHumans : 2 -> 0 alive   (2 net)\nZombies: 1 -> 2 alive   (-1 net)\nRounds: 2   Total iterations: 2   attacks: 6   wall time: 0.00s\nParallel: serial backend, 1 worker(s), 1 sector(s)/round, 20 CPU(s), numpy nearest-enemy, seed 4242\nStopped: round limit\n=================================================================="
+    }
+  ]
+}
